@@ -4,7 +4,7 @@
 
 #include <cstdint>
 #include <vector>
-#include <iterator>
+#include <memory>
 
 #include "Hash.h"
 
@@ -175,7 +175,7 @@ private:
 	detail::DictEntry* end = nullptr;
 };
 
-class RobustDictIterator {
+class RobustDictIterator : public std::enable_shared_from_this<RobustDictIterator> {
 public:
 	using value_type = detail::DictEntry;
 	using reference = detail::DictEntry&;
@@ -185,12 +185,11 @@ public:
 
 	RobustDictIterator() : curr(nullptr) {}
 	RobustDictIterator(Dictionary* d);
-	RobustDictIterator(const RobustDictIterator& that);
-	RobustDictIterator(RobustDictIterator&& that);
-	~RobustDictIterator();
+ 	~RobustDictIterator();
 
 	void Complete();
 	bool Active() { return inserted != nullptr; }
+	std::shared_ptr<RobustDictIterator> GetPtr() { return shared_from_this(); }
 
 	reference operator*() { return curr; }
 	pointer operator->() { return &curr; }
@@ -200,9 +199,6 @@ public:
 
 	bool operator==( const RobustDictIterator& that ) const { return curr == that.curr; }
 	bool operator!=( const RobustDictIterator& that ) const { return !(*this == that); }
-
-	RobustDictIterator& operator=(const RobustDictIterator& that);
-	RobustDictIterator& operator=(RobustDictIterator&& that);
 
 	// Tracks the new entries inserted while iterating. Only used for robust cookies.
 	std::vector<detail::DictEntry>* inserted = nullptr;
@@ -345,19 +341,20 @@ public:
 	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
 	iterator begin() { return { this, table, table + Capacity() }; }
-	// TODO: this should probably be stored as a member somewhere instead of remaking it every
-	// time this method is called during a loop. Perhaps initialize it when one of the begin()
-	// methods is called.
 	iterator end() { return { this, table + Capacity(), table + Capacity() }; }
 	const_iterator begin() const { return { this, table, table + Capacity() }; }
 	const_iterator end() const { return { this, table + Capacity(), table + Capacity() }; }
 	const_iterator cbegin() { return { this, table, table + Capacity() }; }
 	const_iterator cend() { return { this, table + Capacity(), table + Capacity() }; }
 
-	RobustDictIterator begin_robust() { return MakeRobustIterator(); }
+	// begin_robust returns a shared pointer here because we tend to store them for long
+	// periods of time (see TableVal::expire_iterator). We don't want to keep the whole
+	// object in a TableVal if it's never used. end_robust() does not return a pointer
+	// since it's only used in the loop.
+	std::shared_ptr<RobustDictIterator> begin_robust() { return MakeRobustIterator(); }
 	RobustDictIterator end_robust() { return RobustDictIterator(); }
-	const RobustDictIterator cbegin_robust() { return MakeRobustIterator(); }
-	const RobustDictIterator cend_robust() { return RobustDictIterator(); }
+	std::shared_ptr<RobustDictIterator> cbegin_robust() { return MakeRobustIterator(); }
+	RobustDictIterator cend_robust() { return RobustDictIterator(); }
 
 private:
 	friend zeek::IterCookie;
@@ -405,7 +402,7 @@ private:
 
 	void Init();
 
-	//Iteration
+	// Iteration
 	[[deprecated("Remove in v5.1. Use the standard-library-compatible version of iteration.")]]
 	IterCookie* InitForIterationNonConst();
 	[[deprecated("Remove in v5.1. Use the standard-library-compatible version of iteration.")]]
@@ -429,7 +426,8 @@ private:
 	/// Adjust Cookies on Insert.
 	[[deprecated("Remove in v5.1. Use the standard-library-compatible version of iteration and the version that takes a RobustDictIterator.")]]
 	void AdjustOnInsert(IterCookie* c, const detail::DictEntry& entry, int insert_position, int last_affected_position);
-	void AdjustOnInsert(RobustDictIterator* c, const detail::DictEntry& entry, int insert_position, int last_affected_position);
+	void AdjustOnInsert(const std::shared_ptr<RobustDictIterator>& c, const detail::DictEntry& entry,
+	                    int insert_position, int last_affected_position);
 
 	///Remove, Relocate & Adjust cookies.
 	detail::DictEntry RemoveRelocateAndAdjust(int position);
@@ -440,7 +438,8 @@ private:
 	///Adjust safe cookies after Removal of entry at position.
 	[[deprecated("Remove in v5.1. Use the standard-library-compatible version of iteration and the version that takes a RobustDictIterator.")]]
 	void AdjustOnRemove(IterCookie* c, const detail::DictEntry& entry, int position, int last_affected_position);
-	void AdjustOnRemove(RobustDictIterator* c, const detail::DictEntry& entry, int position, int last_affected_position);
+	void AdjustOnRemove(const std::shared_ptr<RobustDictIterator>& c, const detail::DictEntry& entry,
+	                    int position, int last_affected_position);
 
 	bool Remapping() const { return remap_end >= 0;} //remap in reverse order.
 
@@ -454,7 +453,7 @@ private:
 
 	void SizeUp();
 
-	RobustDictIterator MakeRobustIterator();
+	std::shared_ptr<RobustDictIterator> MakeRobustIterator();
 	detail::DictEntry GetNextRobustIteration(RobustDictIterator* iter);
 
 	//alligned on 8-bytes with 4-leading bytes. 7*8=56 bytes a dictionary.
@@ -480,7 +479,7 @@ private:
 	dict_delete_func delete_func = nullptr;
 	detail::DictEntry* table = nullptr;
 	std::vector<IterCookie*>* cookies = nullptr;
-	std::vector<RobustDictIterator*>* iterators = nullptr;
+	std::vector<std::shared_ptr<RobustDictIterator>>* iterators = nullptr;
 
 	// Order means the order of insertion. means no deletion until exit. will be inefficient.
 	std::vector<detail::DictEntry>* order = nullptr;

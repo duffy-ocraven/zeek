@@ -1091,7 +1091,7 @@ protected:
 	detail::ExprPtr expire_time;
 	detail::ExprPtr expire_func;
 	TableValTimer* timer;
-	RobustDictIterator expire_iterator;
+	std::shared_ptr<RobustDictIterator> expire_iterator;
 	detail::PrefixTable* subnets;
 	ValPtr def_val;
 	detail::ExprPtr change_func;

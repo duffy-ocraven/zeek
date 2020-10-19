@@ -2548,7 +2548,7 @@ void TableVal::DoExpire(double t)
 		// error, it has been reported already.
 		return;
 
-	if ( ! expire_iterator.Active() )
+	if ( ! expire_iterator )
 		expire_iterator = tbl->begin_robust();
 
 	detail::HashKey* k = nullptr;
@@ -2557,10 +2557,10 @@ void TableVal::DoExpire(double t)
 	bool modified = false;
 
 	for ( int i = 0; i < zeek::detail::table_incremental_step &&
-		      expire_iterator != tbl->end_robust(); ++i, ++expire_iterator )
+		      *expire_iterator != tbl->end_robust(); ++i, ++(*expire_iterator) )
 		{
-		k = expire_iterator->GetHashKey();
-		v = expire_iterator->GetValue<TableEntryVal*>();
+		k = (*expire_iterator)->GetHashKey();
+		v = (*expire_iterator)->GetValue<TableEntryVal*>();
 
 		if ( v->ExpireAccessTime() == 0 )
 			{
@@ -2631,8 +2631,11 @@ void TableVal::DoExpire(double t)
 	if ( modified )
 		Modified();
 
-	if ( expire_iterator == tbl->end_robust() )
+	if ( (*expire_iterator) == tbl->end_robust() )
+		{
+		expire_iterator = nullptr;
 		InitTimer(zeek::detail::table_expire_interval);
+		}
 	else
 		InitTimer(zeek::detail::table_expire_delay);
 	}
